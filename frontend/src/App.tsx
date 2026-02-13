@@ -113,11 +113,13 @@ function App() {
         fetchEmails(emailInput);
     };
 
+    const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
     const fetchEmails = async (emailToFetch: string = connectedEmail) => {
         if (!emailToFetch) return;
         setLoadingEmails(true);
         try {
-            const res = await fetch(`http://localhost:8000/api/fetch-emails?email=${encodeURIComponent(emailToFetch)}`);
+            const res = await fetch(`${API_BASE_URL}/api/fetch-emails?email=${encodeURIComponent(emailToFetch)}`);
             if (res.ok) {
                 const data = await res.json();
                 setEmails(data);
@@ -155,7 +157,7 @@ function App() {
                 await new Promise(r => setTimeout(r, 450));
             }
             try {
-                const res = await fetch('http://localhost:8000/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(emailData) });
+                const res = await fetch(`${API_BASE_URL}/api/analyze`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(emailData) });
                 if (res.ok) { setVerdict(await res.json()); setScanCount(s => s + 1); setIsAnalyzing(false); setAnalysisStep(''); return; }
             } catch { console.log('Simulation mode'); }
             await simulateAnalysis(emailData);
