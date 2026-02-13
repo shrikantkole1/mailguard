@@ -17,11 +17,17 @@ interface EmailFormData {
 interface EmailSubmissionFormProps {
     onSubmit: (data: EmailFormData) => void;
     isLoading?: boolean;
+    prefillData?: EmailFormData | null;
 }
 
-export const EmailSubmissionForm: React.FC<EmailSubmissionFormProps> = ({ onSubmit, isLoading = false }) => {
+export const EmailSubmissionForm: React.FC<EmailSubmissionFormProps> = ({ onSubmit, isLoading = false, prefillData }) => {
     const [formData, setFormData] = useState<EmailFormData>({ sender_email: '', subject: '', body: '', attachments: [] });
     const [attachmentInput, setAttachmentInput] = useState({ filename: '', mime_type: '' });
+
+    // Populate form when prefillData changes
+    if (prefillData && (prefillData.sender_email !== formData.sender_email || prefillData.subject !== formData.subject)) {
+        setFormData(prefillData);
+    }
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -189,3 +195,4 @@ export const EmailSubmissionForm: React.FC<EmailSubmissionFormProps> = ({ onSubm
         </div>
     );
 };
+

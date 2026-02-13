@@ -58,6 +58,19 @@ const RingChart = ({ value, size = 80, strokeWidth = 8, color }: { value: number
 };
 
 function App() {
+
+    interface EmailMessage {
+        id: string;
+        sender: string;
+        subject: string;
+        snippet: string;
+        date: string;
+        body: string;
+        attachments: Array<{ filename: string; mime_type: string }>;
+        is_read: boolean;
+        folder: string;
+    }
+
     const [currentView, setCurrentView] = useState<'landing' | 'dashboard'>('landing');
     const [verdict, setVerdict] = useState<SecurityVerdict | null>(null);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -70,6 +83,11 @@ function App() {
     const [connectState, setConnectState] = useState<{ gmail: 'idle' | 'connecting' | 'connected', outlook: 'idle' | 'connecting' | 'connected' }>({ gmail: 'idle', outlook: 'idle' });
     const [copied, setCopied] = useState(false);
     const [extensionInstalled, setExtensionInstalled] = useState(false);
+    const [emails, setEmails] = useState<EmailMessage[]>([]);
+    const [loadingEmails, setLoadingEmails] = useState(false);
+    const [selectedEmail, setSelectedEmail] = useState<any | null>(null);
+    const [connectedEmail, setConnectedEmail] = useState('');
+    const [emailInput, setEmailInput] = useState('');
 
     useEffect(() => {
         const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -87,6 +105,40 @@ function App() {
         setTimeout(() => {
             setConnectState(prev => ({ ...prev, [service]: 'connected' }));
         }, 1500);
+    };
+
+    const handleConnectEmail = () => {
+        if (!emailInput) return;
+        setConnectedEmail(emailInput);
+        fetchEmails(emailInput);
+    };
+
+    const fetchEmails = async (emailToFetch: string = connectedEmail) => {
+        if (!emailToFetch) return;
+        setLoadingEmails(true);
+        try {
+            const res = await fetch(`http://localhost:8000/api/fetch-emails?email=${encodeURIComponent(emailToFetch)}`);
+            if (res.ok) {
+                const data = await res.json();
+                setEmails(data);
+            }
+        } catch (error) {
+            console.error("Failed to fetch emails", error);
+        } finally {
+            setLoadingEmails(false);
+        }
+    };
+
+    const handleSelectEmail = (email: EmailMessage) => {
+        setSelectedEmail({
+            sender_email: email.sender,
+            subject: email.subject,
+            body: email.body,
+            attachments: email.attachments
+        });
+
+        // Mark as read in local state
+        setEmails(prev => prev.map(e => e.id === email.id ? { ...e, is_read: true } : e));
     };
 
     const handleInstallExtension = () => {
@@ -330,8 +382,96 @@ function App() {
                             <div className="grid grid-cols-12 gap-5">
 
                                 {/* Form — 4 cols */}
-                                <motion.div initial={{ opacity: 0, x: -15 }} animate={{ opacity: 1, x: 0 }} className="col-span-4">
-                                    <EmailSubmissionForm onSubmit={handleEmailSubmit} isLoading={isAnalyzing} />
+                                <motion.div initial={{ opacity: 0, x: -15 }} animate={{ opacity: 1, x: 0 }} className="col-span-4 space-y-4">
+
+                                    {/* Mock Inbox Panel */}
+                                    <div className="bg-white rounded-2xl p-5 shadow-sm border border-black/5">
+                                        <div className="flex items-center justify-between mb-4">
+                                            <h3 className="text-[13px] font-heading font-bold text-gray-900">Connected Inbox</h3>
+                                            {connectedEmail && (
+                                                <div className="flex gap-2">
+                                                    <button
+                                                        onClick={() => fetchEmails(connectedEmail)}
+                                                        disabled={loadingEmails}
+                                                        className="text-[11px] font-bold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded-lg transition-colors"
+                                                    >
+                                                        {loadingEmails ? 'Fetching...' : 'Fetch New'}
+                                                    </button>
+                                                    <button
+                                                        onClick={() => { setConnectedEmail(''); setEmails([]); }}
+                                                        className="text-[11px] font-bold text-gray-500 hover:text-gray-700 bg-gray-50 hover:bg-gray-100 px-2 py-1 rounded-lg transition-colors"
+                                                    >
+                                                        Disconnect
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {!connectedEmail ? (
+                                            <div className="space-y-3">
+                                                <p className="text-xs text-gray-500">Enter your email address to scan for threats.</p>
+                                                <div className="flex gap-2">
+                                                    <input
+                                                        type="email"
+                                                        placeholder="name@company.com"
+                                                        value={emailInput}
+                                                        onChange={(e) => setEmailInput(e.target.value)}
+                                                        className="flex-1 text-xs border border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                                        onKeyDown={(e) => e.key === 'Enter' && handleConnectEmail()}
+                                                    />
+                                                    <button
+                                                        onClick={handleConnectEmail}
+                                                        disabled={!emailInput}
+                                                        className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                                    >
+                                                        Connect
+                                                    </button>
+                                                </div>
+                                                <p className="text-[10px] text-gray-400">Secure simulated connection via IMAP/Graph API</p>
+                                            </div>
+                                        ) : !emails.length && !loadingEmails ? (
+                                            <div className="text-center py-6 text-gray-400">
+                                                <Inbox className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                                                <p className="text-xs">Inbox is empty</p>
+                                                <p className="text-[10px] text-gray-400 mt-1">Connected as {connectedEmail}</p>
+                                            </div>
+                                        ) : loadingEmails ? (
+                                            <div className="space-y-3">
+                                                {[1, 2, 3].map(i => (
+                                                    <div key={i} className="animate-pulse flex gap-3">
+                                                        <div className="w-8 h-8 bg-gray-200 rounded-full" />
+                                                        <div className="flex-1 space-y-1.5">
+                                                            <div className="h-3 bg-gray-200 rounded w-3/4" />
+                                                            <div className="h-2 bg-gray-200 rounded w-1/2" />
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1 custom-scrollbar">
+                                                {emails.map((email) => (
+                                                    <div
+                                                        key={email.id}
+                                                        onClick={() => handleSelectEmail(email)}
+                                                        className={`p-3 rounded-xl cursor-pointer border transition-all ${selectedEmail?.subject === email.subject
+                                                            ? 'bg-blue-50 border-blue-200 ring-1 ring-blue-200'
+                                                            : email.is_read
+                                                                ? 'bg-gray-50 border-transparent hover:bg-gray-100'
+                                                                : 'bg-white border-gray-100 shadow-sm hover:border-blue-200'}`}
+                                                    >
+                                                        <div className="flex items-center justify-between mb-1">
+                                                            <span className="text-[10px] font-bold text-gray-500 truncate max-w-[120px]">{email.sender.split('@')[0]}</span>
+                                                            <span className="text-[9px] text-gray-400">{email.date.split(' ')[1]}</span>
+                                                        </div>
+                                                        <h4 className={`text-xs font-semibold mb-0.5 truncate ${email.is_read ? 'text-gray-600' : 'text-gray-900'}`}>{email.subject}</h4>
+                                                        <p className="text-[10px] text-gray-400 truncate">{email.snippet}</p>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <EmailSubmissionForm onSubmit={handleEmailSubmit} isLoading={isAnalyzing} prefillData={selectedEmail} />
                                 </motion.div>
 
                                 {/* Results — 5 cols */}

@@ -12,7 +12,7 @@ from typing import List, Dict, Any, Optional
 from enum import Enum
 import asyncio
 from datetime import datetime
-import structlog
+import logging
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -30,8 +30,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize structured logging
-logger = structlog.get_logger()
+# Initialize logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("email_threat_triage")
 
 
 # ============================================================================
@@ -326,10 +327,7 @@ async def analyze_email(request: EmailAnalysisRequest) -> SecurityVerdict:
     Orchestrates all MCP tools in parallel and returns structured verdict
     """
     logger.info(
-        "analysis.started",
-        sender=request.sender_email,
-        subject=request.subject,
-        attachments=len(request.attachments)
+        f"analysis.started: sender={request.sender_email} subject={request.subject} attachments={len(request.attachments)}"
     )
     
     trace_log: List[ToolExecutionTrace] = []
@@ -431,16 +429,167 @@ async def analyze_email(request: EmailAnalysisRequest) -> SecurityVerdict:
         )
         
         logger.info(
-            "analysis.completed",
-            classification=classification.value,
-            risk_score=final_score
+            f"analysis.completed: classification={classification.value} risk_score={final_score}"
         )
         
         return verdict
         
+        
     except Exception as e:
-        logger.error("analysis.failed", error=str(e))
+        logger.error(f"analysis.failed: error={str(e)}")
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+
+
+# ============================================================================
+# EMAIL FETCHING (SIMULATED)
+# ============================================================================
+
+class EmailMessage(BaseModel):
+    """
+    Represents an email fetched from the inbox
+    """
+    id: str
+    sender: str
+    subject: str
+    snippet: str
+    date: str
+    body: str
+    attachments: List[Dict[str, str]] = Field(default_factory=list)
+    is_read: bool = False
+    folder: str = "inbox"
+
+
+@app.get("/api/fetch-emails", response_model=List[EmailMessage])
+async def fetch_emails(email: Optional[str] = None):
+    """
+    Simulates fetching emails from a connected inbox.
+    In production, this would use Gmail/Outlook APIs with OAuth tokens.
+    """
+    import random
+    import uuid
+    
+    # Simulate API latency
+    await asyncio.sleep(1.0)
+    
+    current_date = datetime.now().strftime("%Y-%m-%d %H:%M")
+    
+    # Mock data for demonstration
+    mock_emails = [
+        EmailMessage(
+            id=str(uuid.uuid4()),
+            sender="security-alert@metasploit-demo.com",
+            subject="URGENT: Suspicious Login Detected",
+            snippet="We detected a login from an unrecognized device in Moscow, Russia. Please verify immediately...",
+            date=current_date,
+            body="""
+            Dear User,
+            
+            We detected a login from an unrecognized device in Moscow, Russia.
+            
+            Device: iPhone 13 Pro
+            Location: Moscow, RU
+            Time: Just now
+            
+            If this wasn't you, please secure your account immediately by clicking the link below:
+            
+            <a href="http://bit.ly/secure-account-login">Secure My Account</a>
+            
+            Failure to verify may result in account suspension.
+            
+            Security Team
+            """,
+            is_read=False,
+            folder="inbox"
+        ),
+        EmailMessage(
+            id=str(uuid.uuid4()),
+            sender="newsletter@tech-weekly.io",
+            subject="Top 5 AI Trends in 2026",
+            snippet="Here are the top stories you missed this week in the world of Artificial Intelligence...",
+            date=current_date,
+            body="""
+            Hi Subscriber,
+            
+            Here are the top stories you missed this week:
+            
+            1. GPT-6 released with reasoning capabilities
+            2. Quantum computing breakthrough in encryption
+            3. AI agents now managing 40% of enterprise workflows
+            
+            Read the full story on our blog.
+            
+            Cheers,
+            The Tech Weekly Team
+            """,
+            is_read=True,
+            folder="updates"
+        ),
+        EmailMessage(
+            id=str(uuid.uuid4()),
+            sender="hr-payroll@company-secure-docs.net",
+            subject="Action Required: Q1 Bonus Distribution",
+            snippet="Please review the attached Excel file to confirm your bank details for the upcoming bonus payout...",
+            date=current_date,
+            body="""
+            Hello Team,
+            
+            We are finalizing the Q1 bonus distribution.
+            
+            Please review the attached Excel file to confirm your bank details. You may need to enable editing to view the protected fields.
+            
+            Regards,
+            Human Resources
+            """,
+            attachments=[{"filename": "Bonus_Payout_Q1.xlsm", "mime_type": "application/vnd.ms-excel.sheet.macroEnabled.12"}],
+            is_read=False,
+            folder="inbox"
+        ),
+        EmailMessage(
+            id=str(uuid.uuid4()),
+            sender="invoice@vendor-billing-update.com",
+            subject="Overdue Invoice #9928",
+            snippet="Your payment for Invoice #9928 is overdue. Please remit payment immediately to avoid service interruption...",
+            date=current_date,
+            body="""
+            Dear Customer,
+            
+            Your payment for Invoice #9928 ($4,500.00) is overdue.
+            
+            Please remit payment immediately to avoid service interruption.
+            
+            Pay securely here: http://secure-payment-portal-redirect.com/pay/9928
+            
+            Accounts Receivable
+            """,
+            is_read=False,
+            folder="inbox"
+        ),
+        EmailMessage(
+            id=str(uuid.uuid4()),
+            sender="alice@project-team.com",
+            subject="Meeting notes from today",
+            snippet="Hi everyone, here are the key takeaways from our sync. 1. Design phase is complete. 2. Dev starts Monday...",
+            date=current_date,
+            body="""
+            Hi everyone,
+            
+            Here are the key takeaways from our sync:
+            
+            1. Design phase is complete.
+            2. Dev starts Monday.
+            3. QA planned for next Friday.
+            
+            See you at the standup.
+            
+            Best,
+            Alice
+            """,
+            is_read=True,
+            folder="inbox"
+        )
+    ]
+    
+    return mock_emails
 
 
 # Health check endpoint
