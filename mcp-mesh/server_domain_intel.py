@@ -186,4 +186,4 @@ def check_domain_reputation(sender_email: str) -> DomainReputationResult:
 
 if __name__ == "__main__":
     # Run MCP server
-    mcp.run()
+    mcp.run(transport='sse', port=8002)

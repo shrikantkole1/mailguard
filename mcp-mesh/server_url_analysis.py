@@ -179,4 +179,4 @@ def scan_urls(email_body: str) -> URLAnalysisResult:
 
 if __name__ == "__main__":
     # Run MCP server
-    mcp.run()
+    mcp.run(transport='sse', port=8001)

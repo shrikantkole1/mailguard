@@ -5,16 +5,32 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { api } from './api/client';
+import { useAuth } from './context/AuthContext';
+import { LoginButton } from './components/LoginButton';
 import {
     Shield, Home, BarChart3, CheckCircle2,
     AlertTriangle, AlertCircle, History, Settings, Bell, Search, Mail,
     Inbox, Zap, Eye, Lock, Globe,
     PanelLeftClose, PanelLeft, ChevronRight, Sparkles,
     ArrowUpRight, ArrowDownRight, Filter, Download, RefreshCw,
-    Cpu, Wifi, Server, FileWarning, Fingerprint, ScanLine, Loader2
+    Cpu, Wifi, Server, FileWarning, Fingerprint, ScanLine, Loader2, LogOut
 } from 'lucide-react';
 import { ModernLanding } from './pages/ModernLanding';
 import { EmailSubmissionForm } from './components/EmailSubmissionForm';
+
+export interface EmailMessage {
+    id: string;
+    sender: string;
+    subject: string;
+    snippet: string;
+    date: string;
+    body: string;
+    attachments: Array<{ filename: string; mime_type: string }>;
+    is_read: boolean;
+    folder: string;
+}
 
 interface SecurityVerdict {
     email_metadata: Record<string, string>;
@@ -58,19 +74,7 @@ const RingChart = ({ value, size = 80, strokeWidth = 8, color }: { value: number
 };
 
 function App() {
-
-    interface EmailMessage {
-        id: string;
-        sender: string;
-        subject: string;
-        snippet: string;
-        date: string;
-        body: string;
-        attachments: Array<{ filename: string; mime_type: string }>;
-        is_read: boolean;
-        folder: string;
-    }
-
+    const { user, login, logout, isAuthenticated } = useAuth();
     const [currentView, setCurrentView] = useState<'landing' | 'dashboard'>('landing');
     const [verdict, setVerdict] = useState<SecurityVerdict | null>(null);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -83,11 +87,20 @@ function App() {
     const [connectState, setConnectState] = useState<{ gmail: 'idle' | 'connecting' | 'connected', outlook: 'idle' | 'connecting' | 'connected' }>({ gmail: 'idle', outlook: 'idle' });
     const [copied, setCopied] = useState(false);
     const [extensionInstalled, setExtensionInstalled] = useState(false);
-    const [emails, setEmails] = useState<EmailMessage[]>([]);
-    const [loadingEmails, setLoadingEmails] = useState(false);
     const [selectedEmail, setSelectedEmail] = useState<any | null>(null);
     const [connectedEmail, setConnectedEmail] = useState('');
     const [emailInput, setEmailInput] = useState('');
+
+    // Auto-redirect to dashboard if authenticated
+    useEffect(() => {
+        if (isAuthenticated) {
+            setCurrentView('dashboard');
+            // Clean up URL if coming from auth redirect
+            if (window.location.pathname.includes('/auth/success')) {
+                window.history.replaceState({}, '', '/');
+            }
+        }
+    }, [isAuthenticated]);
 
     useEffect(() => {
         const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -107,29 +120,52 @@ function App() {
         }, 1500);
     };
 
-    const handleConnectEmail = () => {
-        if (!emailInput) return;
-        setConnectedEmail(emailInput);
-        fetchEmails(emailInput);
-    };
+    const queryClient = useQueryClient();
 
-    const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+    // Fetch Emails Query
+    const { data: emails = [], isLoading: loadingEmails, refetch: refetchEmails } = useQuery<EmailMessage[]>({
+        queryKey: ['emails'],
+        queryFn: async () => {
+            const res = await api.get<EmailMessage[]>('/api/sync'); // Call Sync endpoint
+            return res.data;
+        },
+        enabled: isAuthenticated, // Only fetch if logged in
+        refetchInterval: 30000, // Poll every 30s
+    });
 
-    const fetchEmails = async (emailToFetch: string = connectedEmail) => {
-        if (!emailToFetch) return;
-        setLoadingEmails(true);
-        try {
-            const res = await fetch(`${API_BASE_URL}/api/fetch-emails?email=${encodeURIComponent(emailToFetch)}`);
-            if (res.ok) {
-                const data = await res.json();
-                setEmails(data);
-            }
-        } catch (error) {
-            console.error("Failed to fetch emails", error);
-        } finally {
-            setLoadingEmails(false);
+    // Analyze Mutation
+    const analyzeMutation = useMutation({
+        mutationFn: async (emailData: any) => {
+            const res = await api.post('/api/analyze', {
+                sender_email: emailData.sender,
+                subject: emailData.subject,
+                body: emailData.body,
+                attachments: emailData.attachments || [] // Ensure attachments is set
+            });
+            return res.data;
+        },
+        onSuccess: (data) => {
+            setVerdict(data);
+            setScanCount(s => s + 1);
+            if (data.classification !== 'safe') setThreatCount(t => t + 1);
+            setIsAnalyzing(false);
+            setAnalysisStep('');
+        },
+        onError: (error) => {
+            console.error("Analysis failed", error);
+            setIsAnalyzing(false);
+            setAnalysisStep('');
         }
-    };
+    });
+
+    // Replace connectedEmail logic with Auth User
+    useEffect(() => {
+        if (user) {
+            setConnectedEmail(user.email);
+        } else {
+            setConnectedEmail('');
+        }
+    }, [user]);
 
     const handleSelectEmail = (email: EmailMessage) => {
         setSelectedEmail({
@@ -139,8 +175,10 @@ function App() {
             attachments: email.attachments
         });
 
-        // Mark as read in local state
-        setEmails(prev => prev.map(e => e.id === email.id ? { ...e, is_read: true } : e));
+        // Mark as read in local state - optimistically
+        queryClient.setQueryData(['emails'], (old: EmailMessage[]) =>
+            old ? old.map(e => e.id === email.id ? { ...e, is_read: true } : e) : []
+        );
     };
 
     const handleInstallExtension = () => {
@@ -150,19 +188,16 @@ function App() {
     const handleEmailSubmit = async (emailData: any) => {
         setIsAnalyzing(true);
         setVerdict(null);
-        try {
-            const steps = ['Initializing AI agents…', 'Scanning domain reputation…', 'Analyzing URL patterns…', 'Running attachment forensics…', 'Detecting social engineering…', 'Aggregating threat scores…'];
-            for (const step of steps) {
-                setAnalysisStep(step);
-                await new Promise(r => setTimeout(r, 450));
-            }
-            try {
-                const res = await fetch(`${API_BASE_URL}/api/analyze`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(emailData) });
-                if (res.ok) { setVerdict(await res.json()); setScanCount(s => s + 1); setIsAnalyzing(false); setAnalysisStep(''); return; }
-            } catch { console.log('Simulation mode'); }
-            await simulateAnalysis(emailData);
-            setScanCount(s => s + 1);
-        } finally { setIsAnalyzing(false); setAnalysisStep(''); }
+
+        const steps = ['Initializing AI agents…', 'Scanning domain reputation…', 'Analyzing URL patterns…', 'Running attachment forensics…', 'Detecting social engineering…', 'Aggregating threat scores…'];
+
+        // Visual steps progress
+        for (const step of steps) {
+            setAnalysisStep(step);
+            await new Promise(r => setTimeout(r, 450));
+        }
+
+        analyzeMutation.mutate(emailData);
     };
 
     const simulateAnalysis = async (emailData: any) => {
@@ -386,21 +421,21 @@ function App() {
                                 {/* Form — 4 cols */}
                                 <motion.div initial={{ opacity: 0, x: -15 }} animate={{ opacity: 1, x: 0 }} className="col-span-4 space-y-4">
 
-                                    {/* Mock Inbox Panel */}
+                                    {/* Inbox Panel */}
                                     <div className="bg-white rounded-2xl p-5 shadow-sm border border-black/5">
                                         <div className="flex items-center justify-between mb-4">
                                             <h3 className="text-[13px] font-heading font-bold text-gray-900">Connected Inbox</h3>
                                             {connectedEmail && (
                                                 <div className="flex gap-2">
                                                     <button
-                                                        onClick={() => fetchEmails(connectedEmail)}
+                                                        onClick={() => refetchEmails()}
                                                         disabled={loadingEmails}
                                                         className="text-[11px] font-bold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded-lg transition-colors"
                                                     >
                                                         {loadingEmails ? 'Fetching...' : 'Fetch New'}
                                                     </button>
                                                     <button
-                                                        onClick={() => { setConnectedEmail(''); setEmails([]); }}
+                                                        onClick={() => logout()}
                                                         className="text-[11px] font-bold text-gray-500 hover:text-gray-700 bg-gray-50 hover:bg-gray-100 px-2 py-1 rounded-lg transition-colors"
                                                     >
                                                         Disconnect
@@ -410,28 +445,12 @@ function App() {
                                         </div>
 
                                         {!connectedEmail ? (
-                                            <div className="space-y-3">
-                                                <p className="text-xs text-gray-500">Enter your email address to scan for threats.</p>
-                                                <div className="flex gap-2">
-                                                    <input
-                                                        type="email"
-                                                        placeholder="name@company.com"
-                                                        value={emailInput}
-                                                        onChange={(e) => setEmailInput(e.target.value)}
-                                                        className="flex-1 text-xs border border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                                                        onKeyDown={(e) => e.key === 'Enter' && handleConnectEmail()}
-                                                    />
-                                                    <button
-                                                        onClick={handleConnectEmail}
-                                                        disabled={!emailInput}
-                                                        className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                                                    >
-                                                        Connect
-                                                    </button>
-                                                </div>
-                                                <p className="text-[10px] text-gray-400">Secure simulated connection via IMAP/Graph API</p>
+                                            <div className="flex flex-col items-center justify-center space-y-4 py-8">
+                                                <p className="text-xs text-gray-500">Sign in to your account to scan emails.</p>
+                                                <LoginButton />
+                                                <p className="text-[10px] text-gray-400">Secure connection via Google OAuth</p>
                                             </div>
-                                        ) : !emails.length && !loadingEmails ? (
+                                        ) : !emails?.length && !loadingEmails ? (
                                             <div className="text-center py-6 text-gray-400">
                                                 <Inbox className="w-8 h-8 mx-auto mb-2 opacity-30" />
                                                 <p className="text-xs">Inbox is empty</p>
@@ -462,8 +481,8 @@ function App() {
                                                                 : 'bg-white border-gray-100 shadow-sm hover:border-blue-200'}`}
                                                     >
                                                         <div className="flex items-center justify-between mb-1">
-                                                            <span className="text-[10px] font-bold text-gray-500 truncate max-w-[120px]">{email.sender.split('@')[0]}</span>
-                                                            <span className="text-[9px] text-gray-400">{email.date.split(' ')[1]}</span>
+                                                            <span className="text-[10px] font-bold text-gray-500 truncate max-w-[120px]">{email.sender ? email.sender.split('@')[0] : 'Unknown'}</span>
+                                                            <span className="text-[9px] text-gray-400">{email.date ? email.date.split(' ')[1] : ''}</span>
                                                         </div>
                                                         <h4 className={`text-xs font-semibold mb-0.5 truncate ${email.is_read ? 'text-gray-600' : 'text-gray-900'}`}>{email.subject}</h4>
                                                         <p className="text-[10px] text-gray-400 truncate">{email.snippet}</p>
@@ -472,6 +491,7 @@ function App() {
                                             </div>
                                         )}
                                     </div>
+
 
                                     <EmailSubmissionForm onSubmit={handleEmailSubmit} isLoading={isAnalyzing} prefillData={selectedEmail} />
                                 </motion.div>
@@ -677,268 +697,275 @@ function App() {
                                     </div>
                                 </motion.div>
                             </div>
-                        </div>
-                    )}
+                        </div >
+                    )
+                    }
 
                     {/* ══════════════ HISTORY TAB ══════════════ */}
-                    {activeTab === 'history' && (
-                        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
-                            <div className="flex items-center gap-3 mb-2">
-                                <div className="relative flex-1 max-w-sm">
-                                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-300" />
-                                    <input placeholder="Search scans…" className="w-full pl-10 pr-4 py-2.5 bg-white border border-black/10 rounded-xl text-sm text-gray-900 placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-300 shadow-sm" />
+                    {
+                        activeTab === 'history' && (
+                            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+                                <div className="flex items-center gap-3 mb-2">
+                                    <div className="relative flex-1 max-w-sm">
+                                        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-300" />
+                                        <input placeholder="Search scans…" className="w-full pl-10 pr-4 py-2.5 bg-white border border-black/10 rounded-xl text-sm text-gray-900 placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-300 shadow-sm" />
+                                    </div>
+                                    <button className="flex items-center gap-2 px-4 py-2.5 bg-white border border-black/10 rounded-xl text-xs font-semibold text-gray-500 hover:bg-gray-50 shadow-sm">
+                                        <Filter className="w-3.5 h-3.5" /> Filter
+                                    </button>
                                 </div>
-                                <button className="flex items-center gap-2 px-4 py-2.5 bg-white border border-black/10 rounded-xl text-xs font-semibold text-gray-500 hover:bg-gray-50 shadow-sm">
-                                    <Filter className="w-3.5 h-3.5" /> Filter
-                                </button>
-                            </div>
-                            {[
-                                { sender: 'support@paypa1-verify.com', subject: 'URGENT: Verify your account', risk: 87, classification: 'malicious', time: 'Today 2:34 PM', color: 'from-red-500 to-rose-600' },
-                                { sender: 'colleague@company.com', subject: 'Q4 Budget Review', risk: 5, classification: 'safe', time: 'Today 1:12 PM', color: 'from-emerald-500 to-green-600' },
-                                { sender: 'hr@company-payro11.com', subject: 'Updated Salary Info', risk: 92, classification: 'malicious', time: 'Today 11:45 AM', color: 'from-red-500 to-rose-600' },
-                                { sender: 'newsletter@techcrunch.com', subject: 'Weekly Digest', risk: 3, classification: 'safe', time: 'Yesterday 4:30 PM', color: 'from-emerald-500 to-green-600' },
-                                { sender: 'support@amaz0n-help.net', subject: 'Order Confirmation #4829', risk: 62, classification: 'suspicious', time: 'Yesterday 2:15 PM', color: 'from-orange-500 to-amber-600' },
-                            ].map((scan, idx) => (
-                                <motion.div key={idx} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.04 }} whileHover={{ y: -1 }} className="bg-white rounded-2xl p-5 shadow-sm border border-black/5 flex items-center gap-4 cursor-pointer hover:shadow-md transition-all">
-                                    <div className={`w-12 h-12 bg-gradient-to-br ${scan.color} rounded-xl flex items-center justify-center text-white font-heading font-bold shadow-sm`}>
-                                        {scan.risk}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-2 mb-0.5">
-                                            <span className="text-sm font-heading font-bold text-gray-900 truncate">{scan.subject}</span>
-                                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${clr(scan.classification).bgLight} ${clr(scan.classification).text}`}>{scan.classification}</span>
+                                {[
+                                    { sender: 'support@paypa1-verify.com', subject: 'URGENT: Verify your account', risk: 87, classification: 'malicious', time: 'Today 2:34 PM', color: 'from-red-500 to-rose-600' },
+                                    { sender: 'colleague@company.com', subject: 'Q4 Budget Review', risk: 5, classification: 'safe', time: 'Today 1:12 PM', color: 'from-emerald-500 to-green-600' },
+                                    { sender: 'hr@company-payro11.com', subject: 'Updated Salary Info', risk: 92, classification: 'malicious', time: 'Today 11:45 AM', color: 'from-red-500 to-rose-600' },
+                                    { sender: 'newsletter@techcrunch.com', subject: 'Weekly Digest', risk: 3, classification: 'safe', time: 'Yesterday 4:30 PM', color: 'from-emerald-500 to-green-600' },
+                                    { sender: 'support@amaz0n-help.net', subject: 'Order Confirmation #4829', risk: 62, classification: 'suspicious', time: 'Yesterday 2:15 PM', color: 'from-orange-500 to-amber-600' },
+                                ].map((scan, idx) => (
+                                    <motion.div key={idx} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.04 }} whileHover={{ y: -1 }} className="bg-white rounded-2xl p-5 shadow-sm border border-black/5 flex items-center gap-4 cursor-pointer hover:shadow-md transition-all">
+                                        <div className={`w-12 h-12 bg-gradient-to-br ${scan.color} rounded-xl flex items-center justify-center text-white font-heading font-bold shadow-sm`}>
+                                            {scan.risk}
                                         </div>
-                                        <p className="text-xs text-gray-400 font-mono">{scan.sender}</p>
-                                    </div>
-                                    <div className="text-right flex-shrink-0">
-                                        <p className="text-[11px] text-gray-400">{scan.time}</p>
-                                    </div>
-                                    <ChevronRight className="w-4 h-4 text-gray-300 flex-shrink-0" />
-                                </motion.div>
-                            ))}
-                        </motion.div>
-                    )}
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-2 mb-0.5">
+                                                <span className="text-sm font-heading font-bold text-gray-900 truncate">{scan.subject}</span>
+                                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${clr(scan.classification).bgLight} ${clr(scan.classification).text}`}>{scan.classification}</span>
+                                            </div>
+                                            <p className="text-xs text-gray-400 font-mono">{scan.sender}</p>
+                                        </div>
+                                        <div className="text-right flex-shrink-0">
+                                            <p className="text-[11px] text-gray-400">{scan.time}</p>
+                                        </div>
+                                        <ChevronRight className="w-4 h-4 text-gray-300 flex-shrink-0" />
+                                    </motion.div>
+                                ))}
+                            </motion.div>
+                        )
+                    }
 
                     {/* ══════════════ ANALYTICS TAB ══════════════ */}
-                    {activeTab === 'analytics' && (
-                        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
-                            {/* Overview Cards */}
-                            <div className="grid grid-cols-4 gap-4">
-                                {[
-                                    { label: 'Emails Scanned', value: '1,247', period: 'This month', color: 'from-blue-500 to-indigo-500' },
-                                    { label: 'Avg Scan Time', value: '2.1s', period: 'Last 30 days', color: 'from-emerald-500 to-teal-500' },
-                                    { label: 'False Positive Rate', value: '0.3%', period: 'This quarter', color: 'from-orange-500 to-amber-500' },
-                                    { label: 'Uptime', value: '99.99%', period: 'All time', color: 'from-violet-500 to-purple-500' },
-                                ].map((stat, idx) => (
-                                    <div key={idx} className="bg-white rounded-2xl p-5 shadow-sm border border-black/5">
-                                        <div className={`w-10 h-10 bg-gradient-to-br ${stat.color} rounded-xl flex items-center justify-center mb-3 shadow-sm`}>
-                                            <span className="text-white text-xs font-bold">{idx + 1}</span>
-                                        </div>
-                                        <p className="text-2xl font-heading font-bold text-gray-900 tracking-tight">{stat.value}</p>
-                                        <p className="text-[11px] text-gray-400 mt-0.5">{stat.label}</p>
-                                        <p className="text-[10px] text-gray-300 mt-0.5">{stat.period}</p>
-                                    </div>
-                                ))}
-                            </div>
-
-                            <div className="grid grid-cols-3 gap-5">
-                                {/* Threat Distribution */}
-                                <div className="bg-white rounded-2xl p-6 shadow-sm border border-black/5 col-span-2">
-                                    <h3 className="text-[13px] font-heading font-bold text-gray-900 mb-5">Threat Distribution</h3>
-                                    <div className="space-y-4">
-                                        {[
-                                            { label: 'Phishing', count: 28, total: 127, color: 'from-red-500 to-pink-500' },
-                                            { label: 'Malware', count: 15, total: 127, color: 'from-orange-500 to-amber-500' },
-                                            { label: 'Social Engineering', count: 8, total: 127, color: 'from-purple-500 to-violet-500' },
-                                            { label: 'Clean', count: 76, total: 127, color: 'from-emerald-500 to-green-500' },
-                                        ].map((item, idx) => (
-                                            <div key={idx}>
-                                                <div className="flex items-center justify-between mb-1.5">
-                                                    <span className="text-sm font-medium text-gray-700">{item.label}</span>
-                                                    <span className="text-sm font-heading font-bold text-gray-900">{item.count}</span>
-                                                </div>
-                                                <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
-                                                    <motion.div initial={{ width: 0 }} animate={{ width: `${(item.count / item.total) * 100}%` }} transition={{ duration: 1, delay: idx * 0.1 }} className={`h-full bg-gradient-to-r ${item.color} rounded-full`} />
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                {/* Top Blocked */}
-                                <div className="bg-white rounded-2xl p-6 shadow-sm border border-black/5">
-                                    <h3 className="text-[13px] font-heading font-bold text-gray-900 mb-4">Top Blocked</h3>
-                                    <div className="space-y-2.5">
-                                        {[
-                                            { domain: 'paypa1-verify.com', count: 12 },
-                                            { domain: 'amaz0n-help.net', count: 8 },
-                                            { domain: 'company-payro11.com', count: 6 },
-                                            { domain: 'malware-drop.ru', count: 5 },
-                                            { domain: 'g00gle-sec.com', count: 4 },
-                                        ].map((item, idx) => (
-                                            <div key={idx} className="flex items-center gap-3 p-2.5 bg-gray-50 rounded-xl">
-                                                <div className="w-7 h-7 bg-gradient-to-br from-red-500 to-pink-500 rounded-lg flex items-center justify-center flex-shrink-0">
-                                                    <span className="text-white text-[10px] font-bold">{idx + 1}</span>
-                                                </div>
-                                                <span className="text-[11px] font-mono text-gray-700 flex-1 truncate">{item.domain}</span>
-                                                <span className="text-xs font-heading font-bold text-red-500">{item.count}</span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            </div>
-                        </motion.div>
-                    )}
-
-                    {/* ══════════════ SETTINGS TAB ══════════════ */}
-                    {activeTab === 'settings' && (
-                        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="max-w-2xl space-y-5">
-
-                            {/* FAQ / Direct Answer */}
-                            <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5 flex items-start gap-3">
-                                <div className="p-2 bg-blue-100 rounded-lg text-blue-600">
-                                    <Zap className="w-5 h-5" />
-                                </div>
-                                <div>
-                                    <h3 className="text-sm font-bold text-gray-900">How to submit emails?</h3>
-                                    <p className="text-xs text-gray-600 mt-1 leading-relaxed">
-                                        You do <strong>not</strong> need to connect your Gmail account. You can analyze emails by:
-                                    </p>
-                                    <ul className="mt-2 space-y-1 text-xs text-gray-600 list-disc list-inside">
-                                        <li>Pasting the email content manually in the <strong>Analyze</strong> tab.</li>
-                                        <li>Forwarding emails to your dedicated address below.</li>
-                                        <li>(Optional) Connecting your inbox for automatic scanning.</li>
-                                    </ul>
-                                </div>
-                            </div>
-
-                            <div className="bg-white rounded-2xl p-6 shadow-sm border border-black/5">
-                                <h3 className="text-[13px] font-heading font-bold text-gray-900 mb-5">Integrations & Usage</h3>
-                                <div className="space-y-6">
-
-                                    {/* Method 1: Forwarding */}
-                                    <div className="bg-gray-50/50 rounded-xl p-4 border border-gray-100 relative group">
-                                        <div className="flex items-start gap-3">
-                                            <div className="p-2 bg-white border border-gray-200 rounded-lg shadow-sm">
-                                                <Mail className="w-4 h-4 text-gray-600" />
-                                            </div>
-                                            <div className="flex-1">
-                                                <h4 className="text-sm font-heading font-bold text-gray-900">Smart Forwarding</h4>
-                                                <p className="text-xs text-gray-500 mt-1 mb-3">Forward any suspicious email to your dedicated analysis address.</p>
-                                                <div className="flex items-center gap-2">
-                                                    <code className="flex-1 bg-white border border-gray-200 px-3 py-2 rounded-lg text-xs font-mono text-gray-600 select-all">analysis-kole-8492@mailguard.ai</code>
-                                                    <button
-                                                        onClick={copyToClipboard}
-                                                        className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-bold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all active:scale-95"
-                                                    >
-                                                        {copied ? 'Copied!' : 'Copy'}
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* Method 2: Direct Connect */}
-                                    <div>
-                                        <h4 className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-3">Connect Inbox (Automatic Scanning)</h4>
-                                        <div className="grid grid-cols-2 gap-3">
-                                            {/* Gmail */}
-                                            <button
-                                                onClick={() => handleConnect('gmail')}
-                                                disabled={connectState.gmail === 'connected'}
-                                                className={'flex items-center justify-center gap-2 px-4 py-3 rounded-xl border transition-all group relative overflow-hidden ' + (connectState.gmail === 'connected' ? 'bg-green-50 border-green-200 cursor-default' : 'bg-white border-gray-200 hover:border-blue-500 hover:shadow-md')}
-                                            >
-                                                {connectState.gmail === 'connecting' ? (
-                                                    <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
-                                                ) : connectState.gmail === 'connected' ? (
-                                                    <>
-                                                        <div className="w-5 h-5 rounded-full bg-green-100 text-green-600 flex items-center justify-center"><CheckCircle2 className="w-3.5 h-3.5" /></div>
-                                                        <span className="text-sm font-semibold text-green-700">Connected</span>
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <div className="w-5 h-5 rounded-full bg-red-50 text-red-600 font-bold flex items-center justify-center text-[10px]">G</div>
-                                                        <span className="text-sm font-semibold text-gray-700 group-hover:text-gray-900">Connect Gmail</span>
-                                                    </>
-                                                )}
-                                            </button>
-
-                                            {/* Outlook */}
-                                            <button
-                                                onClick={() => handleConnect('outlook')}
-                                                disabled={connectState.outlook === 'connected'}
-                                                className={'flex items-center justify-center gap-2 px-4 py-3 rounded-xl border transition-all group relative overflow-hidden ' + (connectState.outlook === 'connected' ? 'bg-green-50 border-green-200 cursor-default' : 'bg-white border-gray-200 hover:border-blue-500 hover:shadow-md')}
-                                            >
-                                                {connectState.outlook === 'connecting' ? (
-                                                    <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
-                                                ) : connectState.outlook === 'connected' ? (
-                                                    <>
-                                                        <div className="w-5 h-5 rounded-full bg-green-100 text-green-600 flex items-center justify-center"><CheckCircle2 className="w-3.5 h-3.5" /></div>
-                                                        <span className="text-sm font-semibold text-green-700">Connected</span>
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <div className="w-5 h-5 rounded-full bg-blue-50 text-blue-600 font-bold flex items-center justify-center text-[10px]">O</div>
-                                                        <span className="text-sm font-semibold text-gray-700 group-hover:text-gray-900">Connect Outlook</span>
-                                                    </>
-                                                )}
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    {/* Method 3: Extension */}
-                                    <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-                                        <div>
-                                            <h4 className="text-sm font-bold text-gray-900">Browser Extension</h4>
-                                            <p className="text-xs text-gray-500">Analyze webmail in 1-click without connecting account</p>
-                                        </div>
-                                        <button
-                                            onClick={handleInstallExtension}
-                                            disabled={extensionInstalled}
-                                            className={'flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-colors ' + (extensionInstalled ? 'bg-green-100 text-green-700' : 'bg-gray-900 text-white hover:bg-black')}
-                                        >
-                                            {extensionInstalled ? (
-                                                <><CheckCircle2 className="w-3 h-3" /> Installed</>
-                                            ) : (
-                                                <><Download className="w-3 h-3" /> Install Extension</>
-                                            )}
-                                        </button>
-                                    </div>
-
-                                </div>
-                            </div>
-
-                            <div className="bg-white rounded-2xl p-6 shadow-sm border border-black/5 opacity-60 hover:opacity-100 transition-opacity">
-                                <h3 className="text-[13px] font-heading font-bold text-gray-900 mb-5">Security Policies (Advanced)</h3>
-                                <div className="space-y-4">
+                    {
+                        activeTab === 'analytics' && (
+                            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
+                                {/* Overview Cards */}
+                                <div className="grid grid-cols-4 gap-4">
                                     {[
-                                        { label: 'Auto-quarantine malicious emails', desc: 'Immediately isolate high-risk emails', on: true, color: 'bg-blue-500' },
-                                        { label: 'SOC alert notifications', desc: 'Notify security team for critical threats', on: true, color: 'bg-emerald-500' },
-                                        { label: 'Macro detection', desc: 'Scan for embedded macros in attachments', on: true, color: 'bg-orange-500' },
-                                        { label: 'Full trace logging', desc: 'Log detailed execution traces for audit', on: false, color: 'bg-violet-500' },
-                                    ].map((s, idx) => (
-                                        <div key={idx} className="flex items-center justify-between py-2 group">
-                                            <div className="flex items-center gap-3">
-                                                <div className={`w-8 h-8 ${s.on ? s.color : 'bg-gray-200'} rounded-lg flex items-center justify-center transition-colors`}>
-                                                    <CheckCircle2 className={`w-4 h-4 ${s.on ? 'text-white' : 'text-gray-400'}`} />
-                                                </div>
-                                                <div>
-                                                    <span className="text-sm font-semibold text-gray-700 block">{s.label}</span>
-                                                    <span className="text-[11px] text-gray-400">{s.desc}</span>
-                                                </div>
+                                        { label: 'Emails Scanned', value: '1,247', period: 'This month', color: 'from-blue-500 to-indigo-500' },
+                                        { label: 'Avg Scan Time', value: '2.1s', period: 'Last 30 days', color: 'from-emerald-500 to-teal-500' },
+                                        { label: 'False Positive Rate', value: '0.3%', period: 'This quarter', color: 'from-orange-500 to-amber-500' },
+                                        { label: 'Uptime', value: '99.99%', period: 'All time', color: 'from-violet-500 to-purple-500' },
+                                    ].map((stat, idx) => (
+                                        <div key={idx} className="bg-white rounded-2xl p-5 shadow-sm border border-black/5">
+                                            <div className={`w-10 h-10 bg-gradient-to-br ${stat.color} rounded-xl flex items-center justify-center mb-3 shadow-sm`}>
+                                                <span className="text-white text-xs font-bold">{idx + 1}</span>
                                             </div>
-                                            <div className={`w-12 h-7 rounded-full relative cursor-pointer transition-colors duration-200 ${s.on ? 'bg-blue-500' : 'bg-gray-200'}`}>
-                                                <motion.div layout className={`absolute top-1 w-5 h-5 rounded-full bg-white shadow-sm ${s.on ? 'left-6' : 'left-1'}`} />
-                                            </div>
+                                            <p className="text-2xl font-heading font-bold text-gray-900 tracking-tight">{stat.value}</p>
+                                            <p className="text-[11px] text-gray-400 mt-0.5">{stat.label}</p>
+                                            <p className="text-[10px] text-gray-300 mt-0.5">{stat.period}</p>
                                         </div>
                                     ))}
                                 </div>
-                            </div>
-                        </motion.div>
-                    )}
-                </div>
-            </main>
-        </div>
+
+                                <div className="grid grid-cols-3 gap-5">
+                                    {/* Threat Distribution */}
+                                    <div className="bg-white rounded-2xl p-6 shadow-sm border border-black/5 col-span-2">
+                                        <h3 className="text-[13px] font-heading font-bold text-gray-900 mb-5">Threat Distribution</h3>
+                                        <div className="space-y-4">
+                                            {[
+                                                { label: 'Phishing', count: 28, total: 127, color: 'from-red-500 to-pink-500' },
+                                                { label: 'Malware', count: 15, total: 127, color: 'from-orange-500 to-amber-500' },
+                                                { label: 'Social Engineering', count: 8, total: 127, color: 'from-purple-500 to-violet-500' },
+                                                { label: 'Clean', count: 76, total: 127, color: 'from-emerald-500 to-green-500' },
+                                            ].map((item, idx) => (
+                                                <div key={idx}>
+                                                    <div className="flex items-center justify-between mb-1.5">
+                                                        <span className="text-sm font-medium text-gray-700">{item.label}</span>
+                                                        <span className="text-sm font-heading font-bold text-gray-900">{item.count}</span>
+                                                    </div>
+                                                    <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                                                        <motion.div initial={{ width: 0 }} animate={{ width: `${(item.count / item.total) * 100}%` }} transition={{ duration: 1, delay: idx * 0.1 }} className={`h-full bg-gradient-to-r ${item.color} rounded-full`} />
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Top Blocked */}
+                                    <div className="bg-white rounded-2xl p-6 shadow-sm border border-black/5">
+                                        <h3 className="text-[13px] font-heading font-bold text-gray-900 mb-4">Top Blocked</h3>
+                                        <div className="space-y-2.5">
+                                            {[
+                                                { domain: 'paypa1-verify.com', count: 12 },
+                                                { domain: 'amaz0n-help.net', count: 8 },
+                                                { domain: 'company-payro11.com', count: 6 },
+                                                { domain: 'malware-drop.ru', count: 5 },
+                                                { domain: 'g00gle-sec.com', count: 4 },
+                                            ].map((item, idx) => (
+                                                <div key={idx} className="flex items-center gap-3 p-2.5 bg-gray-50 rounded-xl">
+                                                    <div className="w-7 h-7 bg-gradient-to-br from-red-500 to-pink-500 rounded-lg flex items-center justify-center flex-shrink-0">
+                                                        <span className="text-white text-[10px] font-bold">{idx + 1}</span>
+                                                    </div>
+                                                    <span className="text-[11px] font-mono text-gray-700 flex-1 truncate">{item.domain}</span>
+                                                    <span className="text-xs font-heading font-bold text-red-500">{item.count}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            </motion.div>
+                        )
+                    }
+
+                    {/* ══════════════ SETTINGS TAB ══════════════ */}
+                    {
+                        activeTab === 'settings' && (
+                            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="max-w-2xl space-y-5">
+
+                                {/* FAQ / Direct Answer */}
+                                <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5 flex items-start gap-3">
+                                    <div className="p-2 bg-blue-100 rounded-lg text-blue-600">
+                                        <Zap className="w-5 h-5" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-sm font-bold text-gray-900">How to submit emails?</h3>
+                                        <p className="text-xs text-gray-600 mt-1 leading-relaxed">
+                                            You do <strong>not</strong> need to connect your Gmail account. You can analyze emails by:
+                                        </p>
+                                        <ul className="mt-2 space-y-1 text-xs text-gray-600 list-disc list-inside">
+                                            <li>Pasting the email content manually in the <strong>Analyze</strong> tab.</li>
+                                            <li>Forwarding emails to your dedicated address below.</li>
+                                            <li>(Optional) Connecting your inbox for automatic scanning.</li>
+                                        </ul>
+                                    </div>
+                                </div>
+
+                                <div className="bg-white rounded-2xl p-6 shadow-sm border border-black/5">
+                                    <h3 className="text-[13px] font-heading font-bold text-gray-900 mb-5">Integrations & Usage</h3>
+                                    <div className="space-y-6">
+
+                                        {/* Method 1: Forwarding */}
+                                        <div className="bg-gray-50/50 rounded-xl p-4 border border-gray-100 relative group">
+                                            <div className="flex items-start gap-3">
+                                                <div className="p-2 bg-white border border-gray-200 rounded-lg shadow-sm">
+                                                    <Mail className="w-4 h-4 text-gray-600" />
+                                                </div>
+                                                <div className="flex-1">
+                                                    <h4 className="text-sm font-heading font-bold text-gray-900">Smart Forwarding</h4>
+                                                    <p className="text-xs text-gray-500 mt-1 mb-3">Forward any suspicious email to your dedicated analysis address.</p>
+                                                    <div className="flex items-center gap-2">
+                                                        <code className="flex-1 bg-white border border-gray-200 px-3 py-2 rounded-lg text-xs font-mono text-gray-600 select-all">analysis-kole-8492@mailguard.ai</code>
+                                                        <button
+                                                            onClick={copyToClipboard}
+                                                            className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-bold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all active:scale-95"
+                                                        >
+                                                            {copied ? 'Copied!' : 'Copy'}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Method 2: Direct Connect */}
+                                        <div>
+                                            <h4 className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-3">Connect Inbox (Automatic Scanning)</h4>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                {/* Gmail */}
+                                                <button
+                                                    onClick={() => handleConnect('gmail')}
+                                                    disabled={connectState.gmail === 'connected'}
+                                                    className={'flex items-center justify-center gap-2 px-4 py-3 rounded-xl border transition-all group relative overflow-hidden ' + (connectState.gmail === 'connected' ? 'bg-green-50 border-green-200 cursor-default' : 'bg-white border-gray-200 hover:border-blue-500 hover:shadow-md')}
+                                                >
+                                                    {connectState.gmail === 'connecting' ? (
+                                                        <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                                                    ) : connectState.gmail === 'connected' ? (
+                                                        <>
+                                                            <div className="w-5 h-5 rounded-full bg-green-100 text-green-600 flex items-center justify-center"><CheckCircle2 className="w-3.5 h-3.5" /></div>
+                                                            <span className="text-sm font-semibold text-green-700">Connected</span>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <div className="w-5 h-5 rounded-full bg-red-50 text-red-600 font-bold flex items-center justify-center text-[10px]">G</div>
+                                                            <span className="text-sm font-semibold text-gray-700 group-hover:text-gray-900">Connect Gmail</span>
+                                                        </>
+                                                    )}
+                                                </button>
+
+                                                {/* Outlook */}
+                                                <button
+                                                    onClick={() => handleConnect('outlook')}
+                                                    disabled={connectState.outlook === 'connected'}
+                                                    className={'flex items-center justify-center gap-2 px-4 py-3 rounded-xl border transition-all group relative overflow-hidden ' + (connectState.outlook === 'connected' ? 'bg-green-50 border-green-200 cursor-default' : 'bg-white border-gray-200 hover:border-blue-500 hover:shadow-md')}
+                                                >
+                                                    {connectState.outlook === 'connecting' ? (
+                                                        <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                                                    ) : connectState.outlook === 'connected' ? (
+                                                        <>
+                                                            <div className="w-5 h-5 rounded-full bg-green-100 text-green-600 flex items-center justify-center"><CheckCircle2 className="w-3.5 h-3.5" /></div>
+                                                            <span className="text-sm font-semibold text-green-700">Connected</span>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <div className="w-5 h-5 rounded-full bg-blue-50 text-blue-600 font-bold flex items-center justify-center text-[10px]">O</div>
+                                                            <span className="text-sm font-semibold text-gray-700 group-hover:text-gray-900">Connect Outlook</span>
+                                                        </>
+                                                    )}
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        {/* Method 3: Extension */}
+                                        <div className="flex items-center justify-between pt-4 border-t border-gray-100">
+                                            <div>
+                                                <h4 className="text-sm font-bold text-gray-900">Browser Extension</h4>
+                                                <p className="text-xs text-gray-500">Analyze webmail in 1-click without connecting account</p>
+                                            </div>
+                                            <button
+                                                onClick={handleInstallExtension}
+                                                disabled={extensionInstalled}
+                                                className={'flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-colors ' + (extensionInstalled ? 'bg-green-100 text-green-700' : 'bg-gray-900 text-white hover:bg-black')}
+                                            >
+                                                {extensionInstalled ? (
+                                                    <><CheckCircle2 className="w-3 h-3" /> Installed</>
+                                                ) : (
+                                                    <><Download className="w-3 h-3" /> Install Extension</>
+                                                )}
+                                            </button>
+                                        </div>
+
+                                    </div>
+                                </div>
+
+                                <div className="bg-white rounded-2xl p-6 shadow-sm border border-black/5 opacity-60 hover:opacity-100 transition-opacity">
+                                    <h3 className="text-[13px] font-heading font-bold text-gray-900 mb-5">Security Policies (Advanced)</h3>
+                                    <div className="space-y-4">
+                                        {[
+                                            { label: 'Auto-quarantine malicious emails', desc: 'Immediately isolate high-risk emails', on: true, color: 'bg-blue-500' },
+                                            { label: 'SOC alert notifications', desc: 'Notify security team for critical threats', on: true, color: 'bg-emerald-500' },
+                                            { label: 'Macro detection', desc: 'Scan for embedded macros in attachments', on: true, color: 'bg-orange-500' },
+                                            { label: 'Full trace logging', desc: 'Log detailed execution traces for audit', on: false, color: 'bg-violet-500' },
+                                        ].map((s, idx) => (
+                                            <div key={idx} className="flex items-center justify-between py-2 group">
+                                                <div className="flex items-center gap-3">
+                                                    <div className={`w-8 h-8 ${s.on ? s.color : 'bg-gray-200'} rounded-lg flex items-center justify-center transition-colors`}>
+                                                        <CheckCircle2 className={`w-4 h-4 ${s.on ? 'text-white' : 'text-gray-400'}`} />
+                                                    </div>
+                                                    <div>
+                                                        <span className="text-sm font-semibold text-gray-700 block">{s.label}</span>
+                                                        <span className="text-[11px] text-gray-400">{s.desc}</span>
+                                                    </div>
+                                                </div>
+                                                <div className={`w-12 h-7 rounded-full relative cursor-pointer transition-colors duration-200 ${s.on ? 'bg-blue-500' : 'bg-gray-200'}`}>
+                                                    <motion.div layout className={`absolute top-1 w-5 h-5 rounded-full bg-white shadow-sm ${s.on ? 'left-6' : 'left-1'}`} />
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </motion.div>
+                        )
+                    }
+                </div >
+            </main >
+        </div >
     );
 }
 
