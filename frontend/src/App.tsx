@@ -20,6 +20,7 @@ import {
 import { ModernLanding } from './pages/ModernLanding';
 import { LoginPage } from './pages/LoginPage';
 import { EmailSubmissionForm } from './components/EmailSubmissionForm';
+import { handleBlockIP, handleWHOIS, handleExport, handleRescan } from './utils/quickActions';
 
 export interface EmailMessage {
     id: string;
@@ -33,7 +34,7 @@ export interface EmailMessage {
     folder: string;
 }
 
-interface SecurityVerdict {
+export interface SecurityVerdict {
     email_metadata: Record<string, string>;
     tool_execution_trace: Array<{
         tool_name: string;
@@ -660,24 +661,50 @@ function App() {
                                         <div className="mt-4 pt-4 border-t border-gray-100">
                                             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-3">Quick Actions</p>
                                             <div className="grid grid-cols-2 gap-2">
-                                                {[
-                                                    { icon: Lock, label: 'Block IP', color: 'from-red-500 to-pink-500' },
-                                                    { icon: Globe, label: 'WHOIS', color: 'from-blue-500 to-cyan-500' },
-                                                    { icon: Download, label: 'Export', color: 'from-emerald-500 to-teal-500' },
-                                                    { icon: RefreshCw, label: 'Rescan', color: 'from-violet-500 to-purple-500' },
-                                                ].map((action, idx) => (
-                                                    <motion.button
-                                                        key={idx}
-                                                        whileHover={{ scale: 1.03 }}
-                                                        whileTap={{ scale: 0.96 }}
-                                                        className="flex items-center gap-2 px-3 py-2.5 bg-gray-50 hover:bg-gray-100 rounded-xl transition-colors"
-                                                    >
-                                                        <div className={`w-6 h-6 bg-gradient-to-br ${action.color} rounded-md flex items-center justify-center`}>
-                                                            <action.icon className="w-3 h-3 text-white" />
-                                                        </div>
-                                                        <span className="text-[11px] font-semibold text-gray-600">{action.label}</span>
-                                                    </motion.button>
-                                                ))}
+                                                <motion.button
+                                                    whileHover={{ scale: 1.03 }}
+                                                    whileTap={{ scale: 0.96 }}
+                                                    onClick={() => handleBlockIP(verdict)}
+                                                    className="flex items-center gap-2 px-3 py-2.5 bg-gray-50 hover:bg-gray-100 rounded-xl transition-colors"
+                                                >
+                                                    <div className="w-6 h-6 bg-gradient-to-br from-red-500 to-pink-500 rounded-md flex items-center justify-center">
+                                                        <Lock className="w-3 h-3 text-white" />
+                                                    </div>
+                                                    <span className="text-[11px] font-semibold text-gray-600">Block IP</span>
+                                                </motion.button>
+                                                <motion.button
+                                                    whileHover={{ scale: 1.03 }}
+                                                    whileTap={{ scale: 0.96 }}
+                                                    onClick={() => handleWHOIS(verdict)}
+                                                    className="flex items-center gap-2 px-3 py-2.5 bg-gray-50 hover:bg-gray-100 rounded-xl transition-colors"
+                                                >
+                                                    <div className="w-6 h-6 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-md flex items-center justify-center">
+                                                        <Globe className="w-3 h-3 text-white" />
+                                                    </div>
+                                                    <span className="text-[11px] font-semibold text-gray-600">WHOIS</span>
+                                                </motion.button>
+                                                <motion.button
+                                                    whileHover={{ scale: 1.03 }}
+                                                    whileTap={{ scale: 0.96 }}
+                                                    onClick={() => handleExport(verdict)}
+                                                    className="flex items-center gap-2 px-3 py-2.5 bg-gray-50 hover:bg-gray-100 rounded-xl transition-colors"
+                                                >
+                                                    <div className="w-6 h-6 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-md flex items-center justify-center">
+                                                        <Download className="w-3 h-3 text-white" />
+                                                    </div>
+                                                    <span className="text-[11px] font-semibold text-gray-600">Export</span>
+                                                </motion.button>
+                                                <motion.button
+                                                    whileHover={{ scale: 1.03 }}
+                                                    whileTap={{ scale: 0.96 }}
+                                                    onClick={() => handleRescan(selectedEmail, simulateAnalysis, setIsAnalyzing)}
+                                                    className="flex items-center gap-2 px-3 py-2.5 bg-gray-50 hover:bg-gray-100 rounded-xl transition-colors"
+                                                >
+                                                    <div className="w-6 h-6 bg-gradient-to-br from-violet-500 to-purple-500 rounded-md flex items-center justify-center">
+                                                        <RefreshCw className="w-3 h-3 text-white" />
+                                                    </div>
+                                                    <span className="text-[11px] font-semibold text-gray-600">Rescan</span>
+                                                </motion.button>
                                             </div>
                                         </div>
 
