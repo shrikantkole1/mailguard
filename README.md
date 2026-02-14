@@ -1,7 +1,20 @@
-# 🛡️ Archestra.ai - Autonomous Email Threat Triage Platform
-### Enterprise-Grade Security Orchestration with Model Context Protocol (MCP)
-
-![License](https://img.shields.io/badge/license-MIT-blue.svg) ![Python](https://img.shields.io/badge/python-3.11+-blue.svg) ![Framework](https://img.shields.io/badge/framework-Archestra-purple.svg) ![React](https://img.shields.io/badge/frontend-React_Vite-cyan.svg) ![Status](https://img.shields.io/badge/status-Production_Ready-green.svg)
+<div align="center">
+  <h1>🛡️ MailGuard</h1>
+  <h3>Autonomous Email Threat Triage Platform</h3>
+  <p>Enterprise-Grade Security Orchestration with Model Context Protocol (MCP)</p>
+  <br />
+  <br />
+  <a href="https://mailguard-demo.vercel.app"><strong>🚀 Live Deployed Demo</strong></a>
+  <br />
+  <br />
+  <p>
+    <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License" />
+    <img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python" />
+    <img src="https://img.shields.io/badge/framework-Archestra-purple.svg" alt="Archestra" />
+    <img src="https://img.shields.io/badge/frontend-React_Vite-cyan.svg" alt="React" />
+    <img src="https://img.shields.io/badge/status-Production_Ready-green.svg" alt="Status" />
+  </p>
+</div>
 
 ---
 
@@ -163,4 +176,4 @@ This project adheres to **"Security by Design"** principles:
 
 ---
 
-*Built with ❤️ by the Archestra.ai Team - Redefining AI Security.*
+*Built with ❤️ by Shrikant Kole - Redefining AI Security.*
