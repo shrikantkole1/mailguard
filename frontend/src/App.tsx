@@ -137,7 +137,7 @@ function App() {
     const analyzeMutation = useMutation({
         mutationFn: async (emailData: any) => {
             const res = await api.post('/api/analyze', {
-                sender_email: emailData.sender,
+                sender_email: emailData.sender_email,
                 subject: emailData.subject,
                 body: emailData.body,
                 attachments: emailData.attachments || [] // Ensure attachments is set

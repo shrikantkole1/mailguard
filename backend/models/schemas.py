@@ -8,7 +8,7 @@ from enum import Enum
 
 class EmailAnalysisRequest(BaseModel):
     """Request payload from frontend"""
-    sender_email: EmailStr
+    sender_email: str  # Changed from EmailStr to str for more flexible validation
     subject: str = Field(min_length=1, max_length=500)
     body: str = Field(min_length=1, max_length=50000)
     attachments: List[Dict[str, str]] = Field(default_factory=list)

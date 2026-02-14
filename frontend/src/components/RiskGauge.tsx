@@ -1,7 +1,8 @@
 /**
- * RiskGauge Component - Visual Risk Score Display
+ * RiskGauge Component - Visual Trust/Safety Score Display
  * 
- * Displays risk score 0-100 with color-coded severity levels.
+ * Displays trust score 0-100 with color-coded severity levels.
+ * Higher score = safer (inverted from risk score)
  * Uses animated circular gauge for premium aesthetics.
  */
 
@@ -9,19 +10,19 @@ import React from 'react';
 import { AlertTriangle, Shield, AlertCircle } from 'lucide-react';
 
 interface RiskGaugeProps {
-    score: number;  // 0-100
+    score: number;  // 0-100 risk score (will be inverted to trust score)
     classification: 'safe' | 'suspicious' | 'malicious';
 }
 
 export const RiskGauge: React.FC<RiskGaugeProps> = ({ score, classification }) => {
 
-    // Normalize score to 0-100
-    const normalizedScore = Math.min(Math.max(score, 0), 100);
+    // INVERT the score: High risk (85) becomes Low trust (15), Low risk (10) becomes High trust (90)
+    const trustScore = 100 - Math.min(Math.max(score, 0), 100);
 
     // Calculate gauge rotation (0-180 degrees for half-circle)
-    const rotation = (normalizedScore / 100) * 180;
+    const rotation = (trustScore / 100) * 180;
 
-    // Color mapping
+    // Color mapping (colors stay the same based on classification)
     const getColors = () => {
         if (classification === 'malicious') {
             return {
@@ -75,7 +76,7 @@ export const RiskGauge: React.FC<RiskGaugeProps> = ({ score, classification }) =
                         stroke="url(#gradient)"
                         strokeWidth="12"
                         strokeLinecap="round"
-                        strokeDasharray={`${(normalizedScore / 100) * 251} 251`}
+                        strokeDasharray={`${(trustScore / 100) * 251} 251`}
                         className="transition-all duration-1000 ease-out"
                     />
 
@@ -124,12 +125,12 @@ export const RiskGauge: React.FC<RiskGaugeProps> = ({ score, classification }) =
                 <div className={`flex items-center gap-3 ${colors.text}`}>
                     {colors.icon}
                     <div className="text-5xl font-bold tracking-tight">
-                        {normalizedScore}
+                        {trustScore}
                     </div>
                 </div>
 
                 <div className="text-sm text-gray-400 uppercase tracking-wider">
-                    Risk Score
+                    Trust Score
                 </div>
             </div>
 
@@ -144,15 +145,15 @@ export const RiskGauge: React.FC<RiskGaugeProps> = ({ score, classification }) =
             <div className="mt-6 flex items-center gap-4 text-xs text-gray-500">
                 <div className="flex items-center gap-1">
                     <div className="w-3 h-3 rounded-full bg-green-500" />
-                    <span>0-30 Safe</span>
+                    <span>70-100 Safe</span>
                 </div>
                 <div className="flex items-center gap-1">
                     <div className="w-3 h-3 rounded-full bg-yellow-500" />
-                    <span>31-60 Suspicious</span>
+                    <span>40-69 Suspicious</span>
                 </div>
                 <div className="flex items-center gap-1">
                     <div className="w-3 h-3 rounded-full bg-red-500" />
-                    <span>61-100 Malicious</span>
+                    <span>0-39 Malicious</span>
                 </div>
             </div>
         </div>

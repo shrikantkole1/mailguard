@@ -56,16 +56,39 @@ class GmailService:
         body =  raw_email.get("snippet", "") # Fallback to snippet
         parts = payload.get("parts", [])
         
+        # Check if body is in payload (for non-multipart emails)
+        if "data" in payload.get("body", {}):
+             try:
+                data = payload["body"]["data"]
+                padding = len(data) % 4
+                if padding:
+                    data += "=" * (4 - padding)
+                body = base64.urlsafe_b64decode(data).decode("utf-8", errors="replace")
+             except Exception:
+                pass
+
         # Try to find text/plain or text/html
         for part in parts:
             if part.get("mimeType") == "text/plain":
-                if "data" in part["body"]:
-                    body = base64.urlsafe_b64decode(part["body"]["data"]).decode("utf-8")
-                    break
+                if "data" in part.get("body", {}):
+                    try:
+                        data = part["body"]["data"]
+                        padding = len(data) % 4
+                        if padding:
+                            data += "=" * (4 - padding)
+                        body = base64.urlsafe_b64decode(data).decode("utf-8", errors="replace")
+                        break
+                    except Exception:
+                        continue
         
+        # Clean sender address (extract email from "Name <email>")
+        import email.utils
+        _, params_sender = email.utils.parseaddr(sender)
+        clean_sender = params_sender if params_sender else sender
+
         return EmailMessage(
             id=raw_email["id"],
-            sender=sender,
+            sender=clean_sender,
             subject=subject,
             snippet=raw_email.get("snippet", ""),
             date=date,

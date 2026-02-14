@@ -132,23 +132,43 @@ async def analyze_email_content(parsed_email: EmailAnalysisRequest) -> SecurityV
     # Classify
     classification, action = classify_threat(final_score)
     
-    # Generate reasoning
+    # Generate reasoning with specific threat warnings
     reasoning_parts = []
-    if scores.attachment_risk > 60:
-        reasoning_parts.append("Malicious attachment detected")
-    if scores.domain_risk > 60:
-        reasoning_parts.append("Suspicious sender domain")
+    threat_level = "unknown"
+    
+    if scores.attachment_risk > 80:
+        reasoning_parts.append("🚨 MALWARE DETECTED in attachments")
+        threat_level = "malware"
+    elif scores.attachment_risk > 60:
+        reasoning_parts.append("⚠️ Dangerous attachment detected")
+        threat_level = "malware"
+    
+    if scores.domain_risk > 80:
+        reasoning_parts.append("🚨 PHISHING: Domain impersonating trusted brand")
+        if threat_level == "unknown":
+            threat_level = "phishing"
+    elif scores.domain_risk > 60:
+        reasoning_parts.append("⚠️ Suspicious sender domain")
+        if threat_level == "unknown":
+            threat_level = "phishing"
+    
     if scores.url_risk > 60:
-        reasoning_parts.append("Dangerous URLs found")
+        reasoning_parts.append("⚠️ Malicious URLs attempting to steal credentials")
+    
     if scores.social_engineering_risk > 60:
-        reasoning_parts.append("Social engineering patterns detected")
+        reasoning_parts.append("⚠️ Manipulation tactics designed to extract sensitive information")
     
     if not reasoning_parts:
-        reasoning = "Email appears legitimate with no significant security concerns."
+        reasoning = "✅ Email appears legitimate with no significant security concerns. All checks passed successfully."
     elif classification == ThreatClassification.MALICIOUS:
-        reasoning = f"CRITICAL THREAT: {', '.join(reasoning_parts)}. Immediate action required."
+        if threat_level == "malware":
+            reasoning = f"🚨 CRITICAL MALWARE THREAT: {', '.join(reasoning_parts)}. This email contains dangerous malware attempting to compromise your system. QUARANTINE IMMEDIATELY and notify security team."
+        elif threat_level == "phishing":
+            reasoning = f"🚨 CRITICAL PHISHING ATTACK: {', '.join(reasoning_parts)}. Attackers are impersonating a trusted entity to steal your credentials or financial information. DO NOT CLICK any links or provide any information."
+        else:
+            reasoning = f"🚨 CRITICAL THREAT DETECTED: {', '.join(reasoning_parts)}. Immediate action required to prevent security breach."
     else:
-        reasoning = f"Suspicious indicators: {', '.join(reasoning_parts)}. Recommend caution."
+        reasoning = f"⚠️ SUSPICIOUS EMAIL: {', '.join(reasoning_parts)}. Exercise extreme caution - this may be a phishing attempt. Verify sender through alternate channels before taking any action."
     
     # Build verdict
     verdict = SecurityVerdict(

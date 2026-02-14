@@ -55,8 +55,12 @@ async def sync_emails(
         if not full_msg:
             continue
             
-        email_obj = service.parse_email(full_msg)
-        new_emails.append(email_obj)
+        try:
+            email_obj = service.parse_email(full_msg)
+            new_emails.append(email_obj)
+        except Exception as e:
+            logger.error(f"Failed to parse email {msg_id}: {str(e)}")
+            continue
         
         # In a real queue system, we would push to queue here.
         # For now, we return them to frontend which will trigger individual analysis
