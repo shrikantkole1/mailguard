@@ -53,34 +53,33 @@ This platform is engineered to handle specific enterprise security scenarios:
 
 ---
 
-## 🏗️ System Architecture
+##🏗 System Architecture
 
-The architecture follows an **Archestra-first, MCP-native** design pattern. The Agent does not "guess"; it orchestrates specialized tools to gather hard evidence.
+Frontend (React Dashboard)
+        │
+        ▼
+FastAPI Gateway
+        │
+        ▼
+Archestra Agent Runtime
+        │
+        ├── URL Analyzer MCP
+        ├── Domain Reputation MCP
+        ├── Attachment Risk MCP
+        └── Social Engineering MCP
 
-```mermaid
-graph TD
-    User[User / Email Gateway] -->|Submits Email| API[FastAPI Gateway]
-    API --> Agent[Archestra Security Agent]
-    
-    subgraph "MCP Tool Layer"
-        Agent -->|Checks Link| URL[URL Analyzer MCP]
-        Agent -->|Verifies Sender| Domain[Domain Reputation MCP]
-        Agent -->|Scans File| File[Attachment Risk MCP]
-        Agent -->|Reads Intent| NLP[Social Engineering MCP]
-    end
-    
-    URL -->|Risk Score| Aggregator
-    Domain -->|Risk Score| Aggregator
-    File -->|Risk Score| Aggregator
-    NLP -->|Risk Score| Aggregator
-    
-    Aggregator -->|Final Verdict| Agent
-    Agent -->|Action (Block/Allow)| Response[Response Handler]
-    Agent -->|Log Trace| DB[(Audit Log)]
-```
+
+ ---
+      
+## 🧩 Core Platform Components
+Layer	Technology	Purpose
+Agent Orchestration	Pydantic AI	Structured outputs, strong typing
+Tool Protocol	MCP	Modular tool integration
+Runtime Governance	Archestra AI	Policy enforcement, observability
+LLM	GPT-4o	Pattern reasoning within constraints
 
 ---
-
+ 
 ## 🧩 The MCP Tool Suite
 
 Each security capability is encapsulated as an independent **Model Context Protocol (MCP)** server, ensuring modularity and scalability.
