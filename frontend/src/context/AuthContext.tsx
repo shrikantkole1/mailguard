@@ -13,7 +13,7 @@ interface User {
 interface AuthContextType {
     user: User | null;
     isLoading: boolean;
-    login: () => void;
+    login: (userData?: { name: string; email: string }) => void;
     logout: () => void;
     isAuthenticated: boolean;
 }
@@ -28,6 +28,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     useEffect(() => {
         const checkAuth = async () => {
             try {
+                // Check localStorage for simple auth
+                const storedUser = localStorage.getItem('mailguard_user');
+                if (storedUser) {
+                    setUser(JSON.parse(storedUser));
+                    setIsLoading(false);
+                    return;
+                }
+
+                // Fallback to backend auth check
                 const response = await api.get('/auth/me');
                 setUser(response.data);
             } catch (error) {
@@ -39,10 +48,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         checkAuth();
     }, []);
 
-    const login = () => {
-        // Redirect to Google Login
-        // We use window.location because it's an external redirect
-        window.location.href = `${api.defaults.baseURL}/auth/login/google`;
+    const login = (userData?: { name: string; email: string }) => {
+        if (userData) {
+            // Simple email-based login
+            const user: User = {
+                _id: `user_${Date.now()}`,
+                email: userData.email,
+                name: userData.name,
+                plan: 'pro',
+                scan_count: 0,
+            };
+            setUser(user);
+            localStorage.setItem('mailguard_user', JSON.stringify(user));
+        } else {
+            // Redirect to Google Login (legacy)
+            window.location.href = `${api.defaults.baseURL}/auth/login/google`;
+        }
     };
 
     const logout = async () => {

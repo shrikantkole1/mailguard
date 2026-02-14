@@ -18,6 +18,7 @@ import {
     Cpu, Wifi, Server, FileWarning, Fingerprint, ScanLine, Loader2, LogOut
 } from 'lucide-react';
 import { ModernLanding } from './pages/ModernLanding';
+import { LoginPage } from './pages/LoginPage';
 import { EmailSubmissionForm } from './components/EmailSubmissionForm';
 
 export interface EmailMessage {
@@ -75,7 +76,7 @@ const RingChart = ({ value, size = 80, strokeWidth = 8, color }: { value: number
 
 function App() {
     const { user, login, logout, isAuthenticated } = useAuth();
-    const [currentView, setCurrentView] = useState<'landing' | 'dashboard'>('landing');
+    const [currentView, setCurrentView] = useState<'landing' | 'login' | 'dashboard'>('landing');
     const [verdict, setVerdict] = useState<SecurityVerdict | null>(null);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [analysisStep, setAnalysisStep] = useState('');
@@ -225,7 +226,15 @@ function App() {
         });
     };
 
-    if (currentView === 'landing') return <ModernLanding onEnterDashboard={() => setCurrentView('dashboard')} />;
+    const handleEmailLogin = (userData: { name: string; email: string }) => {
+        login({ name: userData.name, email: userData.email });
+        setConnectedEmail(userData.email);
+        setCurrentView('dashboard');
+    };
+
+    // Three-stage flow: Landing → Login → Dashboard
+    if (currentView === 'landing') return <ModernLanding onEnterDashboard={() => setCurrentView('login')} />;
+    if (currentView === 'login' || !isAuthenticated) return <LoginPage onLogin={handleEmailLogin} />;
 
     // Apple-inspired color system
     const clr = (c: string) => ({
