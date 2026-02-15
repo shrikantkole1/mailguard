@@ -697,7 +697,7 @@ function App() {
                                                 <motion.button
                                                     whileHover={{ scale: 1.03 }}
                                                     whileTap={{ scale: 0.96 }}
-                                                    onClick={() => handleRescan(selectedEmail, simulateAnalysis, setIsAnalyzing)}
+                                                    onClick={() => handleRescan(selectedEmail, handleEmailSubmit, setIsAnalyzing)}
                                                     className="flex items-center gap-2 px-3 py-2.5 bg-gray-50 hover:bg-gray-100 rounded-xl transition-colors"
                                                 >
                                                     <div className="w-6 h-6 bg-gradient-to-br from-violet-500 to-purple-500 rounded-md flex items-center justify-center">
