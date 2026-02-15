@@ -1,1 +1,146 @@
-{}
+{
+  "scans": [
+    {
+      "user_id": "anonymous",
+      "message_id": "manual_scan_1771146816.054211",
+      "timestamp": "2026-02-15 14:43:36.054228",
+      "metadata": {
+        "sender": "hr@company-payro11.com",
+        "subject": "Important: Updated Salary Information",
+        "body_preview": "Dear Employee,\n\nPlease review the attached updated salary document. You must enable macros to view the confidential information.\n\nHR Department",
+        "attachments_count": 1
+      },
+      "verdict": {
+        "email_metadata": {
+          "sender": "hr@company-payro11.com",
+          "subject": "Important: Updated Salary Information",
+          "analyzed_at": "2026-02-15T09:13:36.053813"
+        },
+        "tool_execution_trace": [
+          {
+            "tool_name": "check_domain_reputation",
+            "called_at": "2026-02-15T09:13:36.051482",
+            "input_params": {
+              "sender_email": "hr@company-payro11.com"
+            },
+            "output_summary": "Domain: company-payro11.com | Trust Score: 0/100 | Age: 8 days | CRITICAL: Domain associated with malware distribution, Domain recently flagged in threat intelligence feeds, Newly registered domain (8 days old)",
+            "execution_time_ms": 1
+          },
+          {
+            "tool_name": "scan_urls",
+            "called_at": "2026-02-15T09:13:36.051482",
+            "input_params": {
+              "email_body": "Dear Employee,\n\nPlease review the attached updated..."
+            },
+            "output_summary": "Found 0 URL(s) | Risk: 0/100 | No suspicious URLs detected",
+            "execution_time_ms": 0
+          },
+          {
+            "tool_name": "analyze_attachments",
+            "called_at": "2026-02-15T09:13:36.051482",
+            "input_params": {
+              "filenames": [
+                "Salary_Update_2024.xlsm"
+              ]
+            },
+            "output_summary": "Analyzed 1 file(s) | Risk: 85/100 | \u26a0\ufe0f CRITICAL: Macro-enabled document 'Salary_Update_2024.xlsm' - HIGH MALWARE RISK",
+            "execution_time_ms": 0
+          },
+          {
+            "tool_name": "detect_social_engineering",
+            "called_at": "2026-02-15T09:13:36.051482",
+            "input_params": {
+              "subject": "Important: Updated Salary Information",
+              "body_length": 143
+            },
+            "output_summary": "Social Engineering Risk: 35/100 | CRITICAL: Malware delivery patterns detected",
+            "execution_time_ms": 0
+          }
+        ],
+        "aggregated_scores": {
+          "url_risk": 0,
+          "domain_risk": 100,
+          "attachment_risk": 85,
+          "social_engineering_risk": 35
+        },
+        "final_risk_score": 65,
+        "classification": "malicious",
+        "recommended_action": "block_sender",
+        "reasoning_summary": "\ud83d\udea8 CRITICAL MALWARE THREAT: \ud83d\udea8 MALWARE DETECTED in attachments, \ud83d\udea8 PHISHING: Domain impersonating trusted brand. This email contains dangerous malware attempting to compromise your system. QUARANTINE IMMEDIATELY and notify security team.",
+        "confidence_percentage": 92
+      },
+      "_id": "69918e408d6cb7e381c5a7ae"
+    },
+    {
+      "user_id": "anonymous",
+      "message_id": "manual_scan_1771146825.024788",
+      "timestamp": "2026-02-15 14:43:45.024830",
+      "metadata": {
+        "sender": "colleague@company.com",
+        "subject": "Q4 Budget Review Meeting",
+        "body_preview": "Hi team,\n\nPlease join us for the quarterly budget review meeting on Friday at 2 PM.\n\nBest regards,\nFinance Team",
+        "attachments_count": 1
+      },
+      "verdict": {
+        "email_metadata": {
+          "sender": "colleague@company.com",
+          "subject": "Q4 Budget Review Meeting",
+          "analyzed_at": "2026-02-15T09:13:45.023962"
+        },
+        "tool_execution_trace": [
+          {
+            "tool_name": "check_domain_reputation",
+            "called_at": "2026-02-15T09:13:45.023876",
+            "input_params": {
+              "sender_email": "colleague@company.com"
+            },
+            "output_summary": "Domain: company.com | Trust Score: 95/100 | Age: 1042 days | Domain appears legitimate",
+            "execution_time_ms": 0
+          },
+          {
+            "tool_name": "scan_urls",
+            "called_at": "2026-02-15T09:13:45.023876",
+            "input_params": {
+              "email_body": "Hi team,\n\nPlease join us for the quarterly budget ..."
+            },
+            "output_summary": "Found 0 URL(s) | Risk: 0/100 | No suspicious URLs detected",
+            "execution_time_ms": 0
+          },
+          {
+            "tool_name": "analyze_attachments",
+            "called_at": "2026-02-15T09:13:45.023876",
+            "input_params": {
+              "filenames": [
+                "budget_q4.pdf"
+              ]
+            },
+            "output_summary": "Analyzed 1 file(s) | Risk: 0/100 | All files appear safe",
+            "execution_time_ms": 0
+          },
+          {
+            "tool_name": "detect_social_engineering",
+            "called_at": "2026-02-15T09:13:45.023876",
+            "input_params": {
+              "subject": "Q4 Budget Review Meeting",
+              "body_length": 111
+            },
+            "output_summary": "Social Engineering Risk: 0/100 | No manipulation patterns detected",
+            "execution_time_ms": 0
+          }
+        ],
+        "aggregated_scores": {
+          "url_risk": 0,
+          "domain_risk": 5,
+          "attachment_risk": 0,
+          "social_engineering_risk": 0
+        },
+        "final_risk_score": 1,
+        "classification": "safe",
+        "recommended_action": "allow",
+        "reasoning_summary": "\u2705 Email appears legitimate with no significant security concerns. All checks passed successfully.",
+        "confidence_percentage": 92
+      },
+      "_id": "69918e498d6cb7e381c5a7af"
+    }
+  ]
+}
